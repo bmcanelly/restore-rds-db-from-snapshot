@@ -1,0 +1,15 @@
+# ignore it all
+*
+
+# unignore
+!.gitignore
+!*.py
+!run_linter.zsh
+!run_tests.zsh
+!requirements.txt
+!tests
+!tests/*.py
+!tests/*.json
+!README.md
+!templates
+!templates/**
