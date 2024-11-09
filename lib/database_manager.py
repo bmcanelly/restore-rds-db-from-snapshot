@@ -25,7 +25,10 @@ class DatabaseManager:
         snapshots = self.rds_manager.get_snapshots(database_name)
         if not snapshots:
             return None
-        return pyip.inputMenu(snapshots, lettered=False, numbered=True)
+        choices = [
+            f"{snapshot['id']:<55} {snapshot['create_time']}" for snapshot in snapshots
+        ]
+        return pyip.inputMenu(choices, lettered=False, numbered=True)
 
     @staticmethod
     def get_template(path: str) -> str:
@@ -40,6 +43,7 @@ class DatabaseManager:
         snapshot = self.choose_snapshot(source_db["DBInstanceIdentifier"])
         if not snapshot:
             return
+        snapshot = snapshot.split()[0]
 
         target_db = pyip.inputStr("Enter a name for the new database: ")
 

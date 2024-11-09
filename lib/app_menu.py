@@ -1,5 +1,5 @@
 import pyinputplus as pyip
-from database_manager import DatabaseManager
+from lib.database_manager import DatabaseManager
 
 
 class AppMenu:

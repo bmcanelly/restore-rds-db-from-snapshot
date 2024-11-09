@@ -4,6 +4,8 @@
 # unignore
 !.gitignore
 !*.py
+!lib
+!lib/*.py
 !run_linter.zsh
 !run_tests.zsh
 !requirements.txt
