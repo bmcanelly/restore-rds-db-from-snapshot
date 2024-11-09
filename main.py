@@ -1,5 +1,5 @@
-from rds_manager import RDSManager
-from app_menu import AppMenu
+from lib.rds_manager import RDSManager
+from lib.app_menu import AppMenu
 
 
 def main():

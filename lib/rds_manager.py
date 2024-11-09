@@ -34,10 +34,31 @@ class RDSManager:
             resp = self.rds.describe_db_snapshots(DBInstanceIdentifier=database_name)[
                 "DBSnapshots"
             ]
-            return [snap["DBSnapshotIdentifier"] for snap in resp]
         except Exception:
             print("[ERROR] - ", traceback.format_exc())
             return []
+
+        return self.snapshots_by_create_time(resp)
+
+    def snapshots_by_create_time(self, unsorted_snapshots: list) -> list:
+        snapshots = []
+
+        try:
+            for snapshot in unsorted_snapshots:
+                snapshots.append(
+                    {
+                        "id": snapshot["DBSnapshotIdentifier"],
+                        "create_time": snapshot["SnapshotCreateTime"],
+                    }
+                )
+            snapshots.sort(key=lambda x: x["create_time"])
+            for snapshot in snapshots:
+                if "create_time" in snapshot:
+                    snapshot["create_time"] = snapshot["create_time"].strftime("%x %X")
+        except Exception:
+            print("[ERROR] - ", traceback.format_exc())
+            return []
+        return snapshots
 
     def restore_database_from_snapshot(
         self, snapshot: str, target: str, source: dict

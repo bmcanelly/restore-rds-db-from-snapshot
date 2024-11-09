@@ -1,5 +1,6 @@
 import boto3
 from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
 import json
 from io import StringIO
 import json
@@ -11,9 +12,9 @@ import sys
 from unittest import mock
 
 # custom
-from database_manager import DatabaseManager
-from rds_manager import RDSManager
-from app_menu import AppMenu
+from lib.database_manager import DatabaseManager
+from lib.rds_manager import RDSManager
+from lib.app_menu import AppMenu
 import main as Main
 
 
@@ -22,8 +23,6 @@ import main as Main
 # Fixtures
 #
 ####################################################################
-
-
 @pytest.fixture(scope="function")
 def aws_credentials():
     os.environ["AWS_REGION"] = "pytest"
@@ -103,6 +102,20 @@ def rds_client(aws_credentials):
         yield conn
 
 
+@pytest.fixture(scope="function")
+def unsorted_snapshots():
+    return [
+        {
+            "DBSnapshotIdentifier": "test-rds-snap",
+            "SnapshotCreateTime": datetime.now(timezone.utc),
+        },
+        {
+            "DBSnapshotIdentifier": "test-rds-snap2",
+            "SnapshotCreateTime": (datetime.now(timezone.utc) - timedelta(days=2)),
+        },
+    ]
+
+
 @contextmanager
 def create_database(rds_client):
     rds_client.create_db_instance(
@@ -127,8 +140,6 @@ def create_database(rds_client):
 # AppMenu Tests
 #
 ####################################################################
-
-
 def test_AppMenu(capsys):
     rds_manager = RDSManager()
     app_menu = AppMenu(rds_manager)
@@ -170,8 +181,6 @@ Bye\n"""
 # RDSManager Tests
 #
 ####################################################################
-
-
 def test_RDSManager(capsys):
     rds_manager = RDSManager()
     app_menu = AppMenu(rds_manager)
@@ -231,7 +240,35 @@ def test_RDSManager_get_snapshots(capsys, db1, rds_client):
     captured_stdout, captured_stderr = capsys.readouterr()
     snapshot = rds_manager.get_snapshots(database_name="test")
     assert captured_stderr == ""
-    assert snapshot == ["test-rds-snap"]
+    assert snapshot == [
+        {
+            "id": "test-rds-snap",
+            "create_time": datetime.now(timezone.utc).strftime("%x %X"),
+        }
+    ]
+
+
+def test_RDSManager_snapshots_by_create_time(
+    capsys, db1, rds_client, unsorted_snapshots
+):
+    rds_manager = RDSManager()
+    captured_stdout, captured_stderr = capsys.readouterr()
+    snapshots = rds_manager.snapshots_by_create_time(
+        unsorted_snapshots=unsorted_snapshots
+    )
+    assert captured_stderr == ""
+    assert snapshots == [
+        {
+            "id": "test-rds-snap2",
+            "create_time": (datetime.now(timezone.utc) - timedelta(days=2)).strftime(
+                "%x %X"
+            ),
+        },
+        {
+            "id": "test-rds-snap",
+            "create_time": datetime.now(timezone.utc).strftime("%x %X"),
+        },
+    ]
 
 
 def test_RDSManager_restore_database_from_snapshot(capsys, db1, rds_client):
@@ -252,8 +289,6 @@ def test_RDSManager_restore_database_from_snapshot(capsys, db1, rds_client):
 # DatabaseManager Tests
 #
 ####################################################################
-
-
 def test_DatabaseManager(capsys):
     rds_manager = RDSManager()
     db_manager = DatabaseManager(rds_manager)
