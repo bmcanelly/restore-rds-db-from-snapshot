@@ -1,6 +1,6 @@
 black==24.10.0
-boto3==1.35.38
-botocore==1.35.38
+boto3==1.35.59
+botocore==1.35.59
 certifi==2024.8.30
 cffi==1.17.1
 charset-normalizer==3.4.0
@@ -11,7 +11,7 @@ iniconfig==2.0.0
 Jinja2==3.1.4
 jmespath==1.0.1
 MarkupSafe==3.0.1
-moto==5.0.16
+moto==5.0.20
 mypy-extensions==1.0.0
 packaging==24.1
 pathspec==0.12.1

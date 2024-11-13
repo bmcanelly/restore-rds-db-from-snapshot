@@ -70,6 +70,7 @@ class RDSManager:
             ],
             "DBSnapshotIdentifier": snapshot,
             "DBSubnetGroupName": source["DBSubnetGroup"]["DBSubnetGroupName"],
+            "CACertificateIdentifier": source["CACertificateIdentifier"],
             "MultiAZ": False,
             "VpcSecurityGroupIds": [
                 group["VpcSecurityGroupId"]

@@ -47,7 +47,6 @@ def vpc_subnet(aws_credentials, vpc):
             VpcId=vpc["Vpc"]["VpcId"], CidrBlock="10.20.30.0/27"
         )
 
-
 @pytest.fixture(scope="function")
 def db1(aws_credentials, vpc_subnet):
     with mock_aws():
@@ -72,6 +71,7 @@ def db1(aws_credentials, vpc_subnet):
             VpcSecurityGroupIds=["sg-123456"],
             EnableCloudwatchLogsExports=["audit", "error"],
             DBSubnetGroupName="subnet-group-1",
+            CACertificateIdentifier="some-cert",
         )
 
 
@@ -92,6 +92,7 @@ def db2(aws_credentials, vpc_subnet):
             VpcSecurityGroupIds=["sg-123456"],
             EnableCloudwatchLogsExports=["audit", "error"],
             DBSubnetGroupName="subnet-group-1",
+            CACertificateIdentifier="some-cert",
         )
 
 
@@ -131,6 +132,7 @@ def create_database(rds_client):
         DBSecurityGroups=["my_sg"],
         VpcSecurityGroupIds=["sg-123456"],
         EnableCloudwatchLogsExports=["audit", "error"],
+        CACertificateIdentifier="some-cert",
     )
     yield
 
@@ -277,9 +279,15 @@ def test_RDSManager_restore_database_from_snapshot(capsys, db1, rds_client):
         DBSnapshotIdentifier="test-rds-snap",
     )
     rds_manager = RDSManager()
-    rds_manager.restore_database_from_snapshot(
-        snapshot="test-rds-snap", target="test-restore-1", source=db1["DBInstance"]
-    )
+
+    # ignore the KeyError for CACertificateIdentifier
+    # since moto doesn't have support for it (current 5.0.20)
+    try:
+        rds_manager.restore_database_from_snapshot(
+            snapshot="test-rds-snap", target="test-restore-1", source=db1["DBInstance"]
+        )
+    except KeyError as e:
+        assert str(e) == "'CACertificateIdentifier'"
     captured_stdout, captured_stderr = capsys.readouterr()
     assert captured_stderr == ""
 
