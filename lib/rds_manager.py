@@ -70,16 +70,13 @@ class RDSManager:
             ],
             "DBSnapshotIdentifier": snapshot,
             "DBSubnetGroupName": source["DBSubnetGroup"]["DBSubnetGroupName"],
-            "MultiAZ": source["MultiAZ"],
+            "MultiAZ": False,
             "VpcSecurityGroupIds": [
                 group["VpcSecurityGroupId"]
                 for group in source["VpcSecurityGroups"]
                 if group["Status"] == "active"
             ],
         }
-        if "DomainMemberships" in source and source["DomainMemberships"]:
-            params["Domain"] = source["DomainMemberships"][0]["Domain"]
-            params["DomainIAMRoleName"] = source["DomainMemberships"][0]["IAMRoleName"]
 
         try:
             self.rds.restore_db_instance_from_db_snapshot(**params)
