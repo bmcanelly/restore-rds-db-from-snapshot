@@ -58,7 +58,7 @@ class RDSManager:
         except Exception:
             print("[ERROR] - ", traceback.format_exc())
             return []
-        return snapshots
+        return reversed(snapshots)
 
     def restore_database_from_snapshot(
         self, snapshot: str, target: str, source: dict
