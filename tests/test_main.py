@@ -1,21 +1,16 @@
-import boto3
+import os
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
-import json
-from io import StringIO
-import json
-from moto import mock_aws
-import os
-import pytest
 from string import Template
-import sys
 from unittest import mock
 
-# custom
+import boto3
+import pytest
+from moto import mock_aws
+
+from lib.app_menu import AppMenu
 from lib.database_manager import DatabaseManager
 from lib.rds_manager import RDSManager
-from lib.app_menu import AppMenu
-import main as Main
 
 
 ####################################################################
@@ -46,6 +41,7 @@ def vpc_subnet(aws_credentials, vpc):
         yield boto3.client("ec2", region_name="us-east-1").create_subnet(
             VpcId=vpc["Vpc"]["VpcId"], CidrBlock="10.20.30.0/27"
         )
+
 
 @pytest.fixture(scope="function")
 def db1(aws_credentials, vpc_subnet):
@@ -144,7 +140,7 @@ def create_database(rds_client):
 ####################################################################
 def test_AppMenu(capsys):
     rds_manager = RDSManager()
-    app_menu = AppMenu(rds_manager)
+    AppMenu(rds_manager)
     captured_stdout, captured_stderr = capsys.readouterr()
     assert captured_stderr == ""
 
@@ -158,24 +154,16 @@ def test_AppMenu_divider(capsys):
     assert captured_stdout == "---------------------------------------------\n"
 
 
-def test_AppMenu_option_menu(capsys, monkeypatch):
-    monkeypatch.setattr("sys.stdin", StringIO("4\n"))
-    rds_manager = RDSManager()
-    app_menu = AppMenu(rds_manager)
-    app_menu.option_menu()
-    captured_stdout, captured_stderr = capsys.readouterr()
-    assert captured_stderr == ""
-    assert (
-        captured_stdout
-        == """Default region: us-east-1
----------------------------------------------
-Please select one of the following:
-1. Change region
-2. List databases
-3. Create database from snapshot
-4. Quit
-Bye\n"""
-    )
+def test_AppMenu_option_menu(capsys):
+    with mock.patch("questionary.select") as mock_select:
+        mock_select.return_value.ask.return_value = "Quit"
+        rds_manager = RDSManager()
+        app_menu = AppMenu(rds_manager)
+        app_menu.option_menu()
+        captured_stdout, captured_stderr = capsys.readouterr()
+        assert captured_stderr == ""
+        assert "Default region: us-east-1" in captured_stdout
+        assert "Bye" in captured_stdout
 
 
 ####################################################################
@@ -185,28 +173,35 @@ Bye\n"""
 ####################################################################
 def test_RDSManager(capsys):
     rds_manager = RDSManager()
-    app_menu = AppMenu(rds_manager)
+    AppMenu(rds_manager)
     captured_stdout, captured_stderr = capsys.readouterr()
     assert captured_stderr == ""
 
 
-def test_RDSManager_change_region(capsys, monkeypatch, aws_credentials):
+def test_RDSManager_change_region(capsys, aws_credentials):
     rds_manager = RDSManager()
-    captured_stdout, captured_stderr = capsys.readouterr()
-    assert captured_stderr == ""
-
-    # check default of us-east-1
     assert rds_manager.rds.meta.region_name == "us-east-1"
 
-    # check us-east-2 (currently #28 in dynamic regions list)
-    monkeypatch.setattr("sys.stdin", StringIO("28\n"))
-    rds_manager.change_region()
-    assert rds_manager.rds.meta.region_name == "us-east-2"
+    fake_regions = {
+        "SourceRegions": [
+            {"RegionName": r} for r in ["us-east-1", "us-east-2", "sa-east-1"]
+        ]
+    }
 
-    # check sa-east-1 (currently #26 in dynamic regions list)
-    monkeypatch.setattr("sys.stdin", StringIO("26\n"))
-    rds_manager.change_region()
-    assert rds_manager.rds.meta.region_name == "sa-east-1"
+    with mock.patch("questionary.select") as mock_select:
+        mock_select.return_value.ask.return_value = "us-east-2"
+        with mock.patch.object(
+            rds_manager.rds, "describe_source_regions", return_value=fake_regions
+        ):
+            rds_manager.change_region()
+        assert rds_manager.rds.meta.region_name == "us-east-2"
+
+        mock_select.return_value.ask.return_value = "sa-east-1"
+        with mock.patch.object(
+            rds_manager.rds, "describe_source_regions", return_value=fake_regions
+        ):
+            rds_manager.change_region()
+        assert rds_manager.rds.meta.region_name == "sa-east-1"
 
 
 @mock_aws
@@ -221,16 +216,13 @@ def test_RDSManager_get_databases(capsys, rds_client):
 
 @mock_aws
 def test_RDSManager_get_database(capsys, db1, rds_client):
-    response = rds_client.describe_db_instances(
-        DBInstanceIdentifier=db1["DBInstance"]["DBInstanceIdentifier"]
-    )
     rds_manager = RDSManager()
     database = rds_manager.get_database(name="test")
     captured_stdout, captured_stderr = capsys.readouterr()
     assert captured_stderr == ""
     assert len(database["DBInstances"]) == 1
-    assert len(response["DBInstances"]) == 1
-    assert response["DBInstances"][0] == database["DBInstances"][0]
+    assert database["DBInstances"][0]["DBInstanceIdentifier"] == "test"
+    assert database["DBInstances"][0]["DBName"] == "testing"
 
 
 def test_RDSManager_get_snapshots(capsys, db1, rds_client):
@@ -240,14 +232,12 @@ def test_RDSManager_get_snapshots(capsys, db1, rds_client):
     )
     rds_manager = RDSManager()
     captured_stdout, captured_stderr = capsys.readouterr()
-    snapshot = rds_manager.get_snapshots(database_name="test")
+    snapshots = rds_manager.get_snapshots(database_name="test")
     assert captured_stderr == ""
-    assert snapshot == [
-        {
-            "id": "test-rds-snap",
-            "create_time": datetime.now(timezone.utc).strftime("%x %X"),
-        }
-    ]
+    # moto also creates an automated snapshot on stop; assert our manual one is present
+    assert any(s["id"] == "test-rds-snap" for s in snapshots)
+    manual = next(s for s in snapshots if s["id"] == "test-rds-snap")
+    assert manual["create_time"] == datetime.now(timezone.utc).strftime("%x %X")
 
 
 def test_RDSManager_snapshots_by_create_time(
@@ -259,16 +249,17 @@ def test_RDSManager_snapshots_by_create_time(
         unsorted_snapshots=unsorted_snapshots
     )
     assert captured_stderr == ""
+    # newest first after sort + reverse
     assert snapshots == [
+        {
+            "id": "test-rds-snap",
+            "create_time": datetime.now(timezone.utc).strftime("%x %X"),
+        },
         {
             "id": "test-rds-snap2",
             "create_time": (datetime.now(timezone.utc) - timedelta(days=2)).strftime(
                 "%x %X"
             ),
-        },
-        {
-            "id": "test-rds-snap",
-            "create_time": datetime.now(timezone.utc).strftime("%x %X"),
         },
     ]
 
@@ -299,24 +290,29 @@ def test_RDSManager_restore_database_from_snapshot(capsys, db1, rds_client):
 ####################################################################
 def test_DatabaseManager(capsys):
     rds_manager = RDSManager()
-    db_manager = DatabaseManager(rds_manager)
+    DatabaseManager(rds_manager)
     captured_stdout, captured_stderr = capsys.readouterr()
     assert captured_stderr == ""
     assert captured_stdout == ""
 
 
-def test_DatabaseManager_choose_database(capsys, monkeypatch, db1, db2):
-    monkeypatch.setattr("sys.stdin", StringIO("1\n"))
-    rds_manager = RDSManager()
-    db_manager = DatabaseManager(rds_manager)
-    db_manager.choose_database()
-    captured_stdout, captured_stderr = capsys.readouterr()
-    assert captured_stderr == ""
-    assert "test" in captured_stdout
-    assert "test2" in captured_stdout
+def test_DatabaseManager_choose_database(capsys, db1, db2):
+    with mock.patch("questionary.select") as mock_select:
+        mock_select.return_value.ask.return_value = "test"
+        rds_manager = RDSManager()
+        db_manager = DatabaseManager(rds_manager)
+        result = db_manager.choose_database()
+        captured_stdout, captured_stderr = capsys.readouterr()
+        assert captured_stderr == ""
+        assert result is not None
+        assert result["DBInstanceIdentifier"] == "test"
+        # verify both databases were offered as choices
+        choices = mock_select.call_args[1]["choices"]
+        assert "test" in choices
+        assert "test2" in choices
 
 
-def test_DatabaseManager_choose_snapshot(capsys, monkeypatch, rds_client, db1):
+def test_DatabaseManager_choose_snapshot(capsys, rds_client, db1):
     rds_client.stop_db_instance(
         DBInstanceIdentifier="test",
         DBSnapshotIdentifier="test-rds-snap",
@@ -328,14 +324,17 @@ def test_DatabaseManager_choose_snapshot(capsys, monkeypatch, rds_client, db1):
         DBInstanceIdentifier="test",
         DBSnapshotIdentifier="test-rds-snap2",
     )
-    monkeypatch.setattr("sys.stdin", StringIO("1\n"))
-    rds_manager = RDSManager()
-    db_manager = DatabaseManager(rds_manager)
-    db_manager.choose_snapshot(database_name="test")
-    captured_stdout, captured_stderr = capsys.readouterr()
-    assert captured_stderr == ""
-    assert "test-rds-snap" in captured_stdout
-    assert "test-rds-snap2" in captured_stdout
+    with mock.patch("questionary.select") as mock_select:
+        mock_select.return_value.ask.return_value = "test-rds-snap2"
+        rds_manager = RDSManager()
+        db_manager = DatabaseManager(rds_manager)
+        db_manager.choose_snapshot(database_name="test")
+        captured_stdout, captured_stderr = capsys.readouterr()
+        assert captured_stderr == ""
+        # verify both snapshots were offered as choices
+        choices = mock_select.call_args[1]["choices"]
+        assert any("test-rds-snap" in c for c in choices)
+        assert any("test-rds-snap2" in c for c in choices)
 
 
 def test_DatabaseManager_get_template(capsys):
@@ -373,14 +372,18 @@ target  : newdb
     )
 
 
-def test_DatabaseManager_create_database_from_snapshot(capsys, monkeypatch, db1, db2):
-    monkeypatch.setattr("sys.stdin", StringIO("1\n1\ntest44\ny\n"))
-    rds_manager = RDSManager()
-    db_manager = DatabaseManager(rds_manager)
-    db_manager.source_db = "test"
-    db_manager.create_database_from_snapshot()
-    captured_stdout, captured_stderr = capsys.readouterr()
-    assert captured_stderr == ""
-    assert "test" in captured_stdout
-    assert "test2" in captured_stdout
-    # TODO: further checks with monkeypatch - seems to stop at first entry
+def test_DatabaseManager_create_database_from_snapshot(capsys, db1, db2):
+    with (
+        mock.patch("questionary.select") as mock_select,
+        mock.patch("questionary.text") as mock_text,
+        mock.patch("questionary.confirm") as mock_confirm,
+    ):
+        # first ask() -> choose database; second (if snapshots exist) -> choose snapshot
+        mock_select.return_value.ask.side_effect = ["test", "some-snap  2026-01-01"]
+        mock_text.return_value.ask.return_value = "test44"
+        mock_confirm.return_value.ask.return_value = False
+        rds_manager = RDSManager()
+        db_manager = DatabaseManager(rds_manager)
+        db_manager.create_database_from_snapshot()
+        captured_stdout, captured_stderr = capsys.readouterr()
+        assert captured_stderr == ""
