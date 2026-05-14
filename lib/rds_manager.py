@@ -1,6 +1,7 @@
-import boto3
-import pyinputplus as pyip
 import traceback
+
+import boto3
+import questionary
 
 
 class RDSManager:
@@ -12,7 +13,7 @@ class RDSManager:
             region["RegionName"]
             for region in self.rds.describe_source_regions()["SourceRegions"]
         ]
-        selected_region = pyip.inputMenu(regions, lettered=False, numbered=True)
+        selected_region = questionary.select("Select a region:", choices=regions).ask()
         self.rds = boto3.client("rds", region_name=selected_region)
 
     def get_databases(self) -> list:
@@ -58,7 +59,7 @@ class RDSManager:
         except Exception:
             print("[ERROR] - ", traceback.format_exc())
             return []
-        return reversed(snapshots)
+        return list(reversed(snapshots))
 
     def restore_database_from_snapshot(
         self, snapshot: str, target: str, source: dict

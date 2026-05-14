@@ -4,11 +4,10 @@
 # unignore
 !.gitignore
 !*.py
+!*.toml
+!Makefile
 !lib
 !lib/*.py
-!run_linter.zsh
-!run_tests.zsh
-!requirements.txt
 !tests
 !tests/*.py
 !tests/*.json

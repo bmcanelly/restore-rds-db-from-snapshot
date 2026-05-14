@@ -1,5 +1,6 @@
-import pyinputplus as pyip
 from string import Template
+
+import questionary
 
 
 class DatabaseManager:
@@ -11,11 +12,10 @@ class DatabaseManager:
         if not databases:
             return None
 
-        db_choice = pyip.inputMenu(
-            [db["DBInstanceIdentifier"] for db in databases],
-            lettered=False,
-            numbered=True,
-        )
+        db_choice = questionary.select(
+            "Select a database:",
+            choices=[db["DBInstanceIdentifier"] for db in databases],
+        ).ask()
         for db in databases:
             if db["DBInstanceIdentifier"] == db_choice:
                 return db
@@ -28,7 +28,7 @@ class DatabaseManager:
         choices = [
             f"{snapshot['id']:<55} {snapshot['create_time']}" for snapshot in snapshots
         ]
-        return pyip.inputMenu(choices, lettered=False, numbered=True)
+        return questionary.select("Select a snapshot:", choices=choices).ask()
 
     @staticmethod
     def get_template(path: str) -> str:
@@ -45,7 +45,7 @@ class DatabaseManager:
             return
         snapshot = snapshot.split()[0]
 
-        target_db = pyip.inputStr("Enter a name for the new database: ")
+        target_db = questionary.text("Enter a name for the new database: ").ask()
 
         template_data = self.get_template("templates/database.tpl")
         template = Template(template_data)
@@ -56,8 +56,8 @@ class DatabaseManager:
         )
         print(tpl)
 
-        confirmed = pyip.inputYesNo("Proceed with restore (y/n)? : ")
-        if confirmed == "yes":
+        confirmed = questionary.confirm("Proceed with restore?").ask()
+        if confirmed:
             self.rds_manager.restore_database_from_snapshot(
                 snapshot, target_db, source_db
             )
